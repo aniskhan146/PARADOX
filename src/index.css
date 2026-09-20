@@ -1,0 +1,53 @@
+@import 'tailwindcss';
+
+@keyframes rainbow-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.paradox-logo {
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  font-family: monospace;
+  background: linear-gradient(
+    90deg,
+    #ff0080, #ff4d00, #ffd700,
+    #00ff88, #00cfff, #8b5cf6,
+    #ff0080
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: rainbow-shift 4s ease infinite;
+  text-shadow: none;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139,92,246,0); }
+  50%       { box-shadow: 0 0 14px 3px rgba(139,92,246,0.45); }
+}
+
+.btn-start {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  border: 1px solid #22c55e44;
+  color: #dcfce7;
+  transition: all 0.25s ease;
+}
+.btn-start:hover {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  border-color: #22c55e88;
+}
+
+.btn-stop {
+  background: linear-gradient(135deg, #991b1b, #7f1d1d);
+  border: 1px solid #ef444444;
+  color: #fee2e2;
+  animation: pulse-glow 2s ease-in-out infinite;
+  transition: all 0.25s ease;
+}
+.btn-stop:hover {
+  background: linear-gradient(135deg, #dc2626, #991b1b);
+  border-color: #ef444488;
+}

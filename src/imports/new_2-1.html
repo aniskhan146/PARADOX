@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Neural Agent — Emerald Voice Visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --accent: #b8ffd9; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; overscroll-behavior: none; }
+  body { font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
+  canvas { position: fixed; inset: 0; display: block; z-index: 0; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+
+  #status {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 5;
+    display: flex; align-items: center; gap: 11px; pointer-events: none; user-select: none;
+    font-size: 9px; letter-spacing: .45em; text-transform: uppercase;
+    color: rgba(255,255,255,.32); transition: color .6s ease; padding-left: .45em;
+  }
+  #status .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: rgba(255,255,255,.5); transition: background .6s ease; flex: none;
+  }
+  #status.on { color: rgba(184,255,217,.9); }
+  #status.on .dot { background: #4dffa6; animation: beat 1.5s ease-in-out infinite; }
+  @keyframes beat {
+    0%,100% { box-shadow: 0 0 0 0 rgba(77,255,166,.35); }
+    50%     { box-shadow: 0 0 0 7px rgba(77,255,166,0); }
+  }
+
+  #gear {
+    position: fixed; right: 22px; bottom: 22px; width: 40px; height: 40px; z-index: 11;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; opacity: .35; cursor: pointer; user-select: none;
+    transition: opacity .25s ease, transform .5s cubic-bezier(.3,.7,.3,1);
+  }
+  #gear:hover, #gear.active { opacity: .9; transform: rotate(45deg); }
+
+  #panel {
+    position: fixed; right: 24px; bottom: 74px; z-index: 10; width: 252px; max-width: calc(100vw - 48px);
+    padding: 18px 18px 14px;
+    background: rgba(7, 12, 9, .6);
+    -webkit-backdrop-filter: blur(18px) saturate(1.25);
+    backdrop-filter: blur(18px) saturate(1.25);
+    border: 1px solid rgba(120,255,180,.09); border-radius: 14px;
+    opacity: 0; transform: translateY(10px) scale(.98); pointer-events: none;
+    transition: opacity .28s ease, transform .28s cubic-bezier(.2,.7,.3,1);
+  }
+  #panel.open { opacity: 1; transform: none; pointer-events: auto; }
+  #panel h2 { font-size: 9px; font-weight: 500; letter-spacing: .32em; text-transform: uppercase; color: rgba(255,255,255,.38); margin-bottom: 5px; }
+  #panel .meta { font-size: 8.5px; letter-spacing: .16em; color: rgba(255,255,255,.24); margin-bottom: 16px; }
+  .ctl { margin-bottom: 13px; }
+  .ctl:last-of-type { margin-bottom: 0; }
+  .ctl .line { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .ctl label { font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.5); }
+  .ctl .val { font-size: 9.5px; color: var(--accent); }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 16px; background: transparent; cursor: pointer; }
+  input[type=range]:focus { outline: none; }
+  input[type=range]:focus-visible { outline: 1px solid rgba(120,255,180,.4); outline-offset: 3px; border-radius: 2px; }
+  input[type=range]::-webkit-slider-runnable-track { height: 2px; background: rgba(255,255,255,.15); border-radius: 1px; }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 11px; height: 11px; margin-top: -4.5px; border-radius: 50%;
+    background: #eafff3; box-shadow: 0 0 0 3px rgba(120,255,180,.10); transition: box-shadow .2s ease;
+  }
+  input[type=range]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 5px rgba(120,255,180,.18); }
+  input[type=range]::-moz-range-track { height: 2px; background: rgba(255,255,255,.15); border-radius: 1px; }
+  input[type=range]::-moz-range-thumb { width: 11px; height: 11px; border: none; border-radius: 50%; background: #eafff3; }
+  .perf {
+    display: flex; justify-content: space-between; margin-top: 14px; padding-top: 11px;
+    border-top: 1px solid rgba(255,255,255,.07);
+    font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.35);
+  }
+  .perf b { color: var(--accent); font-weight: 500; }
+  .hint { margin-top: 9px; font-size: 8.5px; line-height: 1.75; letter-spacing: .07em; color: rgba(255,255,255,.25); }
+</style>
+</head>
+<body>
+
+  <div id="status"><span class="dot"></span><span id="statusText">STANDBY</span></div>
+
+  <div id="gear" aria-label="Settings">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+  </div>
+
+  <div id="panel">
+    <h2>Parameters</h2>
+    <div class="meta" id="meta"></div>
+    <div class="ctl">
+      <div class="line"><label for="s-scale">Sphere scale</label><span class="val" id="v-scale"></span></div>
+      <input type="range" id="s-scale" min="0.70" max="1.30" step="0.01" value="1.00">
+    </div>
+    <div class="ctl">
+      <div class="line"><label for="s-rot">Rotation speed</label><span class="val" id="v-rot"></span></div>
+      <input type="range" id="s-rot" min="0" max="2.5" step="0.05" value="1.00">
+    </div>
+    <div class="ctl">
+      <div class="line"><label for="s-speed">Pulse speed</label><span class="val" id="v-speed"></span></div>
+      <input type="range" id="s-speed" min="0.25" max="3" step="0.05" value="1.00">
+    </div>
+    <div class="ctl">
+      <div class="line"><label for="s-density">Pulse density</label><span class="val" id="v-density"></span></div>
+      <input type="range" id="s-density" min="40" max="320" step="5" value="150">
+    </div>
+    <div class="ctl">
+      <div class="line"><label for="s-spectrum">Spectrum</label><span class="val" id="v-spectrum"></span></div>
+      <input type="range" id="s-spectrum" min="0" max="1" step="0.01" value="0.25">
+    </div>
+    <div class="perf"><span>Render</span><b><span id="fps">—</span> fps</b></div>
+    <div class="hint">space / click — speaking mode<br>drag — orbit &nbsp;·&nbsp; scroll — dolly</div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+'use strict';
+
+/* =========================================================================
+   CONFIG
+   ========================================================================= */
+const N            = 520;
+const R            = 8.0;
+const NODE_R       = 0.048;                             // fine uniform dot
+const SECTORS      = 6;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+const MAX_PULSES = 380;
+const SAMPLES    = 16;
+const SEG_VERTS  = (SAMPLES - 1) * 2;
+const TRAIL      = 2.3;
+const PW         = 6;
+const BASE_SPEED = 3.4;
+
+const BOUNCE_DUR = 0.55, BOUNCE_N = 128;
+const WAVE_PER   = 0.055;
+
+/* impact amplitudes — tuned for the fine-dot scale */
+const AMP_HIT  = 1.1;    // token arrival  → peak ≈ 2.1×
+const AMP_WAVE = 0.55;   // ignition wavefront → peak ≈ 1.55×
+
+/* --- spectral engine --- */
+const HUE_N        = 2048;
+const HUE_PER_DIST = 0.16;
+const EMERALD_T    = 0.64;                    // signature emerald anchor hue
+let   hueSpan      = 0.25;                    // 0 = pure emerald · 1 = full rainbow
+
+let userScale = 1, rotMult = 1, speedMult = 1, targetPulses = 150;
+let speaking = false, speakTarget = 0, speakF = 0;
+let hueDrift = 0;
+
+/* =========================================================================
+   RENDERER / SCENE / CAMERA
+   ========================================================================= */
+const renderer = new THREE.WebGLRenderer({
+  antialias: true, alpha: false, stencil: false, powerPreference: 'high-performance'
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 1);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x000000, 17, 35);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 120);
+camera.position.set(0, 0, 30);
+let zoomTarget = 24.5;
+
+const sphereGroup = new THREE.Group();
+const spinGroup   = new THREE.Group();
+sphereGroup.add(spinGroup);
+scene.add(sphereGroup);
+sphereGroup.rotation.x = 0.35;
+let tiltTarget = 0.35;
+
+/* =========================================================================
+   TOPOLOGY — Fibonacci sphere + tangent-plane sector lattice
+   ========================================================================= */
+const nodePos = new Float32Array(N * 3);
+for (let i = 0; i < N; i++) {
+  const t  = (i + 0.5) / N;
+  const y  = 1 - 2 * t;
+  const rr = Math.sqrt(Math.max(0, 1 - y * y));
+  const th = GOLDEN_ANGLE * i;
+  nodePos[i * 3]     = Math.cos(th) * rr * R;
+  nodePos[i * 3 + 1] = y * R;
+  nodePos[i * 3 + 2] = Math.sin(th) * rr * R;
+}
+
+const bestD2 = new Float32Array(SECTORS);
+const bestJ  = new Int32Array(SECTORS);
+const pairs  = [];
+
+function sectorNeighbors(i, cutoff2, out) {
+  const ix = nodePos[i * 3], iy = nodePos[i * 3 + 1], iz = nodePos[i * 3 + 2];
+  const nx = ix / R, ny = iy / R, nz = iz / R;
+
+  let upx = 0, upy = 1, upz = 0;
+  if (ny > 0.9 || ny < -0.9) { upx = 1; upy = 0; }
+  let t1x = upy * nz - upz * ny, t1y = upz * nx - upx * nz, t1z = upx * ny - upy * nx;
+  const il = 1 / Math.sqrt(t1x * t1x + t1y * t1y + t1z * t1z);
+  t1x *= il; t1y *= il; t1z *= il;
+  const t2x = ny * t1z - nz * t1y, t2y = nz * t1x - nx * t1z, t2z = nx * t1y - ny * t1x;
+
+  for (let s = 0; s < SECTORS; s++) bestD2[s] = Infinity;
+
+  for (let j = 0; j < N; j++) {
+    if (j === i) continue;
+    const vx = nodePos[j * 3] - ix, vy = nodePos[j * 3 + 1] - iy, vz = nodePos[j * 3 + 2] - iz;
+    const d2 = vx * vx + vy * vy + vz * vz;
+    if (d2 > cutoff2) continue;
+    const pn = vx * nx + vy * ny + vz * nz;
+    const tx = vx - pn * nx, ty = vy - pn * ny, tz = vz - pn * nz;
+    const a1 = tx * t1x + ty * t1y + tz * t1z;
+    const a2 = tx * t2x + ty * t2y + tz * t2z;
+    let s = ((Math.atan2(a2, a1) + Math.PI) * (SECTORS / (Math.PI * 2))) | 0;
+    if (s >= SECTORS) s = SECTORS - 1;
+    if (d2 < bestD2[s]) { bestD2[s] = d2; bestJ[s] = j; }
+  }
+
+  let found = 0;
+  for (let s = 0; s < SECTORS; s++) {
+    if (bestD2[s] < Infinity) { out.push(i, bestJ[s]); found++; }
+  }
+  return found;
+}
+
+const CUTOFF2 = (0.45 * R) * (0.45 * R);
+for (let i = 0; i < N; i++) {
+  if (sectorNeighbors(i, CUTOFF2, pairs) < SECTORS) sectorNeighbors(i, Infinity, pairs);
+}
+
+const seen = new Set(), eAL = [], eBL = [];
+for (let k = 0; k < pairs.length; k += 2) {
+  const a = pairs[k], b = pairs[k + 1];
+  if (a === b) continue;
+  const key = a < b ? a * 1000 + b : b * 1000 + a;
+  if (seen.has(key)) continue;
+  seen.add(key);
+  eAL.push(a); eBL.push(b);
+}
+const E = eAL.length;
+
+const edgeA = new Int32Array(E), edgeB = new Int32Array(E);
+const eAX = new Float32Array(E), eAY = new Float32Array(E), eAZ = new Float32Array(E);
+const eBX = new Float32Array(E), eBY = new Float32Array(E), eBZ = new Float32Array(E);
+const eDX = new Float32Array(E), eDY = new Float32Array(E), eDZ = new Float32Array(E);
+const edgeLen = new Float32Array(E), edgeInvLen = new Float32Array(E);
+const latticePos = new Float32Array(E * 6);
+
+for (let e = 0; e < E; e++) {
+  const a = eAL[e], b = eBL[e];
+  edgeA[e] = a; edgeB[e] = b;
+  const ax = nodePos[a * 3], ay = nodePos[a * 3 + 1], az = nodePos[a * 3 + 2];
+  const bx = nodePos[b * 3], by = nodePos[b * 3 + 1], bz = nodePos[b * 3 + 2];
+  eAX[e] = ax; eAY[e] = ay; eAZ[e] = az;
+  eBX[e] = bx; eBY[e] = by; eBZ[e] = bz;
+  const dx = bx - ax, dy = by - ay, dz = bz - az;
+  eDX[e] = dx; eDY[e] = dy; eDZ[e] = dz;
+  const l = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  edgeLen[e] = l; edgeInvLen[e] = 1 / l;
+  latticePos[e * 6] = ax; latticePos[e * 6 + 1] = ay; latticePos[e * 6 + 2] = az;
+  latticePos[e * 6 + 3] = bx; latticePos[e * 6 + 4] = by; latticePos[e * 6 + 5] = bz;
+}
+
+const adjStart = new Int32Array(N + 1);
+for (let e = 0; e < E; e++) { adjStart[edgeA[e] + 1]++; adjStart[edgeB[e] + 1]++; }
+for (let i = 0; i < N; i++) adjStart[i + 1] += adjStart[i];
+const adjEdge = new Int32Array(adjStart[N]);
+{
+  const cur = adjStart.slice(0, N);
+  for (let e = 0; e < E; e++) {
+    adjEdge[cur[edgeA[e]]++] = e;
+    adjEdge[cur[edgeB[e]]++] = e;
+  }
+}
+
+/* =========================================================================
+   SPECTRAL RAINBOW LUT + EMERALD ANCHOR
+   ========================================================================= */
+const hueR = new Float32Array(HUE_N);
+const hueG = new Float32Array(HUE_N);
+const hueB = new Float32Array(HUE_N);
+{
+  const TWO_PI = Math.PI * 2;
+  for (let i = 0; i < HUE_N; i++) {
+    const t = i / HUE_N;
+    let r = 0.5 + 0.5 * Math.cos(TWO_PI * t);
+    let g = 0.5 + 0.5 * Math.cos(TWO_PI * (t + 0.3333));
+    let b = 0.5 + 0.5 * Math.cos(TWO_PI * (t + 0.6667));
+    const l = r * 0.299 + g * 0.587 + b * 0.114;
+    r = l + (r - l) * 1.45;
+    g = l + (g - l) * 1.45;
+    b = l + (b - l) * 1.45;
+    if (r < 0.16) r = 0.16; else if (r > 1) r = 1;
+    if (g < 0.16) g = 0.16; else if (g > 1) g = 1;
+    if (b < 0.16) b = 0.16; else if (b > 1) b = 1;
+    hueR[i] = r; hueG[i] = g; hueB[i] = b;
+  }
+}
+
+/* =========================================================================
+   NODES — InstancedMesh, matrix uploaded once
+   ========================================================================= */
+const nodeGeo = new THREE.SphereGeometry(NODE_R, 10, 8);
+const nodeMat = new THREE.MeshBasicMaterial({ color: 0xccd2d7 });
+
+const nodeScale    = new Float32Array(N).fill(1);
+const nodeFlashCol = new Float32Array(N * 3);
+const aScale = new THREE.InstancedBufferAttribute(nodeScale, 1);
+const aFlash = new THREE.InstancedBufferAttribute(nodeFlashCol, 3);
+aScale.setUsage(THREE.DynamicDrawUsage);
+aFlash.setUsage(THREE.DynamicDrawUsage);
+nodeGeo.setAttribute('aScale', aScale);
+nodeGeo.setAttribute('aFlashColor', aFlash);
+
+nodeMat.onBeforeCompile = function (s) {
+  s.vertexShader = 'attribute float aScale;\nattribute vec3 aFlashColor;\nvarying vec3 vFlashColor;\n' +
+    s.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n\ttransformed *= aScale;\n\tvFlashColor = aFlashColor;');
+  s.fragmentShader = 'varying vec3 vFlashColor;\n' +
+    s.fragmentShader.replace('#include <color_fragment>',
+      '#include <color_fragment>\n\tfloat fi = clamp(dot(vFlashColor, vec3(0.55)) * 2.1, 0.0, 1.0);\n\tdiffuseColor.rgb = mix(diffuseColor.rgb, vFlashColor, fi);');
+};
+
+const nodeMesh = new THREE.InstancedMesh(nodeGeo, nodeMat, N);
+nodeMesh.frustumCulled = false;
+{
+  const m = new THREE.Matrix4();
+  for (let i = 0; i < N; i++) {
+    m.makeTranslation(nodePos[i * 3], nodePos[i * 3 + 1], nodePos[i * 3 + 2]);
+    nodeMesh.setMatrixAt(i, m);
+  }
+  nodeMesh.instanceMatrix.needsUpdate = true;
+}
+spinGroup.add(nodeMesh);
+
+/* =========================================================================
+   BASE LATTICE — hairline white
+   ========================================================================= */
+const latticeGeo = new THREE.BufferGeometry();
+latticeGeo.setAttribute('position', new THREE.BufferAttribute(latticePos, 3));
+const lattice = new THREE.LineSegments(latticeGeo, new THREE.LineBasicMaterial({
+  color: 0xffffff, transparent: true, opacity: 0.10, depthWrite: false
+}));
+lattice.frustumCulled = false;
+lattice.renderOrder = 1;
+spinGroup.add(lattice);
+
+/* =========================================================================
+   PULSE ENGINE
+   ========================================================================= */
+const pEdge = new Int32Array(MAX_PULSES);
+const pT    = new Float32Array(MAX_PULSES);
+const pDist = new Float32Array(MAX_PULSES);
+const pSpd  = new Float32Array(MAX_PULSES);
+const pHue  = new Float32Array(MAX_PULSES);
+const pInt  = new Float32Array(MAX_PULSES);
+
+const pwE = new Int32Array(MAX_PULSES * PW);
+const pwS = new Int32Array(MAX_PULSES * PW);
+const pwD = new Float32Array(MAX_PULSES * PW);
+const pwL = new Float32Array(MAX_PULSES * PW);
+const pwHead = new Int32Array(MAX_PULSES);
+const pwCount = new Int32Array(MAX_PULSES);
+let pCount = 0;
+
+const beamPos = new Float32Array(MAX_PULSES * SEG_VERTS * 3);
+const beamCol = new Float32Array(MAX_PULSES * SEG_VERTS * 3);
+
+const gradLUT = new Float32Array(SAMPLES);
+const headLUT = new Float32Array(SAMPLES);
+const segLUT  = new Float32Array(SAMPLES);
+for (let k = 0; k < SAMPLES; k++) {
+  const u = k / (SAMPLES - 1);
+  gradLUT[k] = u * u;
+  headLUT[k] = Math.pow(u, 7) * 0.8;
+  segLUT[k]  = u;
+}
+
+const pulseGeo = new THREE.BufferGeometry();
+const posAttr = new THREE.BufferAttribute(beamPos, 3);
+const colAttr = new THREE.BufferAttribute(beamCol, 3);
+posAttr.setUsage(THREE.DynamicDrawUsage);
+colAttr.setUsage(THREE.DynamicDrawUsage);
+pulseGeo.setAttribute('position', posAttr);
+pulseGeo.setAttribute('color', colAttr);
+pulseGeo.setDrawRange(0, 0);
+
+const pulseLines = new THREE.LineSegments(pulseGeo, new THREE.LineBasicMaterial({
+  vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false
+}));
+pulseLines.frustumCulled = false;
+pulseLines.renderOrder = 2;
+spinGroup.add(pulseLines);
+
+/* head glow sprite */
+const gc = document.createElement('canvas'); gc.width = gc.height = 64;
+const gctx = gc.getContext('2d');
+const grd = gctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+grd.addColorStop(0, 'rgba(255,255,255,1)');
+grd.addColorStop(0.25, 'rgba(255,255,255,0.5)');
+grd.addColorStop(1, 'rgba(255,255,255,0)');
+gctx.fillStyle = grd; gctx.fillRect(0, 0, 64, 64);
+const glowTex = new THREE.CanvasTexture(gc);
+
+const glowPos = new Float32Array(MAX_PULSES * 3);
+const glowCol = new Float32Array(MAX_PULSES * 3);
+const glowGeo = new THREE.BufferGeometry();
+const glowAttr = new THREE.BufferAttribute(glowPos, 3);
+const glowColAttr = new THREE.BufferAttribute(glowCol, 3);
+glowAttr.setUsage(THREE.DynamicDrawUsage);
+glowColAttr.setUsage(THREE.DynamicDrawUsage);
+glowGeo.setAttribute('position', glowAttr);
+glowGeo.setAttribute('color', glowColAttr);
+glowGeo.setDrawRange(0, 0);
+
+const glowPoints = new THREE.Points(glowGeo, new THREE.PointsMaterial({
+  map: glowTex, size: 0.18, sizeAttenuation: true,
+  vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+}));
+glowPoints.frustumCulled = false;
+glowPoints.renderOrder = 3;
+spinGroup.add(glowPoints);
+
+/* =========================================================================
+   ELASTIC BOUNCE
+   ========================================================================= */
+const bNode = new Int32Array(N), bTime = new Float32Array(N), bAmp = new Float32Array(N);
+const bHue  = new Float32Array(N);
+const bSlot = new Int32Array(N).fill(-1);
+let bCount = 0;
+
+const springLUT = new Float32Array(BOUNCE_N);
+const flashLUT  = new Float32Array(BOUNCE_N);
+for (let k = 0; k < BOUNCE_N; k++) {
+  const u = k / (BOUNCE_N - 1);
+  springLUT[k] = Math.exp(-5.2 * u) * Math.cos(11 * u);
+  flashLUT[k]  = Math.exp(-7 * u);
+}
+
+function triggerBounce(node, amp, hue) {
+  hue = hue % 1; if (hue < 0) hue += 1;
+  const s = bSlot[node];
+  if (s >= 0) { bTime[s] = 0; if (amp > bAmp[s]) bAmp[s] = amp; bHue[s] = hue; return; }
+  bSlot[node] = bCount;
+  bNode[bCount] = node; bTime[bCount] = 0; bAmp[bCount] = amp; bHue[bCount] = hue;
+  bCount++;
+}
+
+function pickNext(node, prev) {
+  const s0 = adjStart[node], s1 = adjStart[node + 1], n = s1 - s0;
+  let e = adjEdge[s0 + ((Math.random() * n) | 0)];
+  if (e === prev && n > 1) e = adjEdge[s0 + ((Math.random() * n) | 0)];
+  return e;
+}
+
+/* =========================================================================
+   IGNITION WAVE — BFS shockwave from a random neuron
+   ========================================================================= */
+const waveDist = new Int32Array(N), waveQ = new Int32Array(N);
+let waveActive = false, waveT0 = 0, waveDur = 1, waveHue0 = 0;
+
+function igniteWave(origin) {
+  if (origin === undefined) origin = (Math.random() * N) | 0;
+  for (let i = 0; i < N; i++) waveDist[i] = -1;
+  let qh = 0, qt = 0, maxD = 0;
+  waveQ[qt++] = origin; waveDist[origin] = 0;
+  while (qh < qt) {
+    const n = waveQ[qh++], d0 = waveDist[n];
+    for (let a = adjStart[n], a1 = adjStart[n + 1]; a < a1; a++) {
+      const ed = adjEdge[a];
+      const m = (edgeA[ed] === n) ? edgeB[ed] : edgeA[ed];
+      if (waveDist[m] < 0) {
+        waveDist[m] = d0 + 1;
+        if (d0 + 1 > maxD) maxD = d0 + 1;
+        waveQ[qt++] = m;
+      }
+    }
+  }
+  waveHue0 = EMERALD_T + (Math.random() - 0.5) * hueSpan;
+  waveHue0 %= 1; if (waveHue0 < 0) waveHue0 += 1;
+  waveT0 = simTime;
+  waveDur = maxD * WAVE_PER + 0.3;
+  waveActive = true;
+}
+
+/* =========================================================================
+   PULSE PHYSICS
+   ========================================================================= */
+function updatePulses(dt, speedFactor, effTarget) {
+  let retire = pCount - effTarget;
+  if (retire > 0) { if (retire > 6) retire = 6; pCount -= retire; }
+
+  for (let i = 0; i < pCount; i++) {
+    const step = pSpd[i] * speedFactor * dt;
+    pHue[i] += step * HUE_PER_DIST * hueSpan;
+    if (pHue[i] >= 1) pHue[i] -= 1;
+
+    let e = pEdge[i];
+    let hb = i * PW + pwHead[i];
+    let t = pT[i] + ((pwS[hb] > 0) ? step : -step) * edgeInvLen[e];
+    let hops = 0;
+
+    while ((t >= 1 || t <= 0) && hops++ < 5) {
+      const el = edgeLen[e];
+      let over, node;
+      if (t >= 1) { node = edgeB[e]; over = (t - 1) * el; }
+      else        { node = edgeA[e]; over = -t * el; }
+
+      triggerBounce(node, AMP_HIT, pHue[i]);
+
+      const ne = pickNext(node, e);
+      const ns = (edgeA[ne] === node) ? 1 : -1;
+      const enterD = pwD[i * PW + pwHead[i]] + el;
+      const nl = edgeLen[ne];
+
+      let h = pwHead[i];
+      h = (h + 1) % PW;
+      if (pwCount[i] < PW) pwCount[i]++;
+      pwHead[i] = h;
+      const b = i * PW + h;
+      pwE[b] = ne; pwS[b] = ns; pwD[b] = enterD; pwL[b] = nl;
+
+      pEdge[i] = ne; e = ne;
+      t = (ns > 0) ? over / nl : 1 - over / nl;
+    }
+
+    pT[i] = t;
+    hb = i * PW + pwHead[i];
+    const el2 = edgeLen[pEdge[i]];
+    pDist[i] = pwD[hb] + ((pwS[hb] > 0) ? t * el2 : (1 - t) * el2);
+  }
+
+  let budget = 10;
+  while (pCount < effTarget && budget-- > 0) {
+    const p = pCount++;
+    const e = (Math.random() * E) | 0;
+    const sg = Math.random() < 0.5 ? 1 : -1;
+    const el = edgeLen[e];
+    const t0 = 0.15 + Math.random() * 0.7;
+    pEdge[p] = e;
+    pT[p] = t0;
+    pSpd[p] = BASE_SPEED * (0.8 + Math.random() * 0.4);
+    pDist[p] = ((sg > 0) ? t0 : 1 - t0) * el;
+    let h = EMERALD_T + (Math.random() - 0.5) * hueSpan;
+    h %= 1; if (h < 0) h += 1;
+    pHue[p] = h;
+    pInt[p] = 0.72 + Math.random() * 0.28;
+    pwHead[p] = 0; pwCount[p] = 1;
+    const b = p * PW;
+    pwE[b] = e; pwS[b] = sg; pwD[b] = 0; pwL[b] = el;
+  }
+}
+
+/* =========================================================================
+   BEAM RASTERIZER
+   ========================================================================= */
+const sX = new Float32Array(SAMPLES), sY = new Float32Array(SAMPLES), sZ = new Float32Array(SAMPLES);
+const sR = new Float32Array(SAMPLES), sG = new Float32Array(SAMPLES), sB = new Float32Array(SAMPLES);
+
+function writeBeams() {
+  let f = 0, c = 0, g = 0;
+  for (let p = 0; p < pCount; p++) {
+    const base = p * PW, cnt = pwCount[p], curH = pwHead[p];
+    const headD = pDist[p];
+    let tailD = headD - TRAIL; if (tailD < 0) tailD = 0;
+    const span = headD - tailD;
+    const inten = pInt[p];
+
+    let hIdx = ((pHue[p] + hueDrift) * HUE_N) | 0;
+    if (hIdx >= HUE_N) hIdx -= HUE_N;
+
+    let si = (curH - cnt + 1 + PW) % PW;
+    let sE = pwE[base + si], sS = pwS[base + si], sEn = pwD[base + si], sLn = pwL[base + si];
+
+    for (let k = 0; k < SAMPLES; k++) {
+      let q = tailD + span * segLUT[k];
+      while (si !== curH && q > sEn + sLn) {
+        si = (si + 1) % PW;
+        sE = pwE[base + si]; sS = pwS[base + si]; sEn = pwD[base + si]; sLn = pwL[base + si];
+      }
+      if (q < sEn) q = sEn;
+      let u = (q - sEn) / sLn;
+      if (u > 1) u = 1; else if (u < 0) u = 0;
+      if (sS > 0) {
+        sX[k] = eAX[sE] + eDX[sE] * u;
+        sY[k] = eAY[sE] + eDY[sE] * u;
+        sZ[k] = eAZ[sE] + eDZ[sE] * u;
+      } else {
+        sX[k] = eBX[sE] - eDX[sE] * u;
+        sY[k] = eBY[sE] - eDY[sE] * u;
+        sZ[k] = eBZ[sE] - eDZ[sE] * u;
+      }
+
+      const back = ((headD - q) * HUE_PER_DIST * hueSpan * HUE_N) | 0;
+      let idx = hIdx - back;
+      if (idx < 0) idx += HUE_N;
+
+      const gA = gradLUT[k] * inten;
+      const wA = headLUT[k] * inten;
+      sR[k] = hueR[idx] * gA + wA;
+      sG[k] = hueG[idx] * gA + wA;
+      sB[k] = hueB[idx] * gA + wA;
+    }
+
+    for (let k = 0; k < SAMPLES - 1; k++) {
+      beamPos[f++] = sX[k];   beamPos[f++] = sY[k];   beamPos[f++] = sZ[k];
+      beamPos[f++] = sX[k+1]; beamPos[f++] = sY[k+1]; beamPos[f++] = sZ[k+1];
+      beamCol[c++] = sR[k];   beamCol[c++] = sG[k];   beamCol[c++] = sB[k];
+      beamCol[c++] = sR[k+1]; beamCol[c++] = sG[k+1]; beamCol[c++] = sB[k+1];
+    }
+
+    glowPos[g] = sX[SAMPLES - 1];
+    glowPos[g + 1] = sY[SAMPLES - 1];
+    glowPos[g + 2] = sZ[SAMPLES - 1];
+    glowCol[g]     = hueR[hIdx] * 0.45 + 0.55;
+    glowCol[g + 1] = hueG[hIdx] * 0.45 + 0.55;
+    glowCol[g + 2] = hueB[hIdx] * 0.45 + 0.55;
+    g += 3;
+  }
+
+  const verts = pCount * SEG_VERTS;
+  pulseGeo.setDrawRange(0, verts);
+  glowGeo.setDrawRange(0, pCount);
+  if (verts > 0) {
+    posAttr.updateRange.offset = 0; posAttr.updateRange.count = verts * 3;
+    colAttr.updateRange.offset = 0; colAttr.updateRange.count = verts * 3;
+    posAttr.needsUpdate = true;
+    colAttr.needsUpdate = true;
+  }
+  if (pCount > 0) {
+    glowAttr.updateRange.offset = 0;    glowAttr.updateRange.count = pCount * 3;
+    glowColAttr.updateRange.offset = 0; glowColAttr.updateRange.count = pCount * 3;
+    glowAttr.needsUpdate = true;
+    glowColAttr.needsUpdate = true;
+  }
+}
+
+/* =========================================================================
+   BOUNCE INTEGRATION
+   ========================================================================= */
+function updateBounces(dt) {
+  let lo = N, hi = -1, w = 0;
+  for (let s = 0; s < bCount; s++) {
+    const t = bTime[s] + dt, node = bNode[s], amp = bAmp[s];
+    const j3 = node * 3;
+
+    if (t >= BOUNCE_DUR) {
+      nodeScale[node] = 1;
+      nodeFlashCol[j3] = 0; nodeFlashCol[j3 + 1] = 0; nodeFlashCol[j3 + 2] = 0;
+      bSlot[node] = -1;
+      if (node < lo) lo = node; if (node > hi) hi = node;
+      continue;
+    }
+
+    const fx = t * (BOUNCE_N - 1) / BOUNCE_DUR;
+    const i0 = fx | 0, i1 = i0 + 1, fr = fx - i0;
+    const sp0 = springLUT[i0], sp1 = springLUT[i1];
+    const fl0 = flashLUT[i0],  fl1 = flashLUT[i1];
+
+    nodeScale[node] = 1 + amp * (sp0 + (sp1 - sp0) * fr);
+    let fl = (fl0 + (fl1 - fl0) * fr) * (amp * 2.4);
+    if (fl > 1) fl = 1;
+
+    const hIdx = (bHue[s] * HUE_N) | 0;
+    nodeFlashCol[j3]     = hueR[hIdx] * fl;
+    nodeFlashCol[j3 + 1] = hueG[hIdx] * fl;
+    nodeFlashCol[j3 + 2] = hueB[hIdx] * fl;
+
+    if (node < lo) lo = node; if (node > hi) hi = node;
+    bNode[w] = node; bTime[w] = t; bAmp[w] = amp; bHue[w] = bHue[s]; bSlot[node] = w;
+    w++;
+  }
+  bCount = w;
+
+  if (hi >= 0) {
+    const cnt = hi - lo + 1;
+    aScale.updateRange.offset = lo;       aScale.updateRange.count = cnt;
+    aFlash.updateRange.offset = lo * 3;   aFlash.updateRange.count = cnt * 3;
+    aScale.needsUpdate = true;
+    aFlash.needsUpdate = true;
+  }
+}
+
+/* =========================================================================
+   INTERACTION
+   ========================================================================= */
+const canvas = renderer.domElement;
+let pDown = false, pMoved = false, lastX = 0, lastY = 0, downX = 0, downY = 0;
+let mouseNX = 0, mouseNY = 0;
+
+const statusEl = document.getElementById('status');
+const statusText = document.getElementById('statusText');
+
+function setSpeaking(on) {
+  if (speaking === on) return;
+  speaking = on;
+  speakTarget = on ? 1 : 0;
+  statusEl.classList.toggle('on', on);
+  statusText.textContent = on ? 'SPEAKING' : 'STANDBY';
+  if (on) igniteWave();                       // shockwave from a random neuron
+}
+
+canvas.addEventListener('pointerdown', function (e) {
+  pDown = true; pMoved = false;
+  downX = lastX = e.clientX; downY = lastY = e.clientY;
+  if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', function (e) {
+  if (!pDown) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  if (Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 6) pMoved = true;
+  if (pMoved) {
+    spinGroup.rotation.y += dx * 0.0045;
+    tiltTarget = Math.max(-1.0, Math.min(1.0, tiltTarget + dy * 0.003));
+  }
+});
+canvas.addEventListener('pointerup', function () {
+  if (!pDown) return;
+  pDown = false;
+  if (!pMoved) setSpeaking(!speaking);
+});
+canvas.addEventListener('pointercancel', function () { pDown = false; });
+canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+window.addEventListener('pointermove', function (e) {
+  mouseNX = (e.clientX / window.innerWidth) * 2 - 1;
+  mouseNY = (e.clientY / window.innerHeight) * 2 - 1;
+});
+canvas.addEventListener('wheel', function (e) {
+  e.preventDefault();
+  zoomTarget = Math.max(15, Math.min(36, zoomTarget + e.deltaY * 0.012));
+}, { passive: false });
+
+window.addEventListener('keydown', function (e) {
+  if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setSpeaking(!speaking); }
+});
+
+/* =========================================================================
+   UI
+   ========================================================================= */
+const gear  = document.getElementById('gear');
+const panel = document.getElementById('panel');
+let panelOpen = false;
+
+gear.addEventListener('click', function () {
+  panelOpen = !panelOpen;
+  panel.classList.toggle('open', panelOpen);
+  gear.classList.toggle('active', panelOpen);
+});
+
+function bindSlider(id, valId, apply, format) {
+  const el = document.getElementById(id), out = document.getElementById(valId);
+  const sync = function () {
+    const v = parseFloat(el.value);
+    apply(v);
+    out.textContent = format(v);
+  };
+  el.addEventListener('input', sync);
+  sync();
+}
+bindSlider('s-scale',    'v-scale',    function (v) { userScale = v; },                 function (v) { return v.toFixed(2); });
+bindSlider('s-rot',      'v-rot',      function (v) { rotMult = v; },                   function (v) { return v.toFixed(2) + '×'; });
+bindSlider('s-speed',    'v-speed',    function (v) { speedMult = v; },                 function (v) { return v.toFixed(2) + '×'; });
+bindSlider('s-density',  'v-density',  function (v) { targetPulses = Math.round(v); }, function (v) { return String(Math.round(v)); });
+bindSlider('s-spectrum', 'v-spectrum', function (v) { hueSpan = v; },                  function (v) { return v < 0.02 ? 'EMERALD' : Math.round(v * 100) + '%'; });
+
+document.getElementById('meta').textContent = N + ' NEURONS · ' + E + ' SYNAPSES';
+
+const fpsEl = document.getElementById('fps');
+let frameCount = 0;
+setInterval(function () {
+  if (panelOpen) fpsEl.textContent = String(Math.round(frameCount * 2));
+  frameCount = 0;
+}, 500);
+
+window.addEventListener('resize', function () {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+});
+
+/* =========================================================================
+   PUBLIC API — future assistant (TTS / mic) hooks
+   ========================================================================= */
+function seedPulseAtNode(node, hue) {
+  if (pCount >= MAX_PULSES) return;
+  const s0 = adjStart[node], s1 = adjStart[node + 1];
+  const e = adjEdge[s0 + ((Math.random() * (s1 - s0)) | 0)];
+  const sg = (edgeA[e] === node) ? 1 : -1;
+  const p = pCount++;
+  pEdge[p] = e;
+  pT[p] = sg > 0 ? 0 : 1;
+  pSpd[p] = BASE_SPEED * (0.85 + Math.random() * 0.3);
+  pDist[p] = 0;
+  pHue[p] = hue % 1;
+  pInt[p] = 0.85 + Math.random() * 0.15;
+  pwHead[p] = 0; pwCount[p] = 1;
+  const b = p * PW;
+  pwE[b] = e; pwS[b] = sg; pwD[b] = 0; pwL[b] = edgeLen[e];
+}
+
+window.AgentVisual = {
+  setSpeaking: setSpeaking,
+  pulse: function (strength) {
+    const s = strength === undefined ? 1 : Math.max(0, Math.min(1, strength));
+    const n = 1 + Math.round(2 * s);
+    for (let i = 0; i < n; i++) {
+      const node = (Math.random() * N) | 0;
+      const h = EMERALD_T + (Math.random() - 0.5) * hueSpan;
+      triggerBounce(node, AMP_HIT, h);
+      seedPulseAtNode(node, h);
+    }
+  }
+};
+
+/* =========================================================================
+   MAIN LOOP — performance.now() delta, zero allocation, zero DOM
+   ========================================================================= */
+const SIN_N = 1024, SIN_LUT = new Float32Array(SIN_N);
+for (let k = 0; k < SIN_N; k++) SIN_LUT[k] = Math.sin(k / SIN_N * Math.PI * 2);
+let breathPhase = 0, swayPhase = 0;
+
+let lastTime = performance.now();
+let simTime = 0;
+
+function tick() {
+  requestAnimationFrame(tick);
+  const now = performance.now();
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  if (dt <= 0) return;
+  if (dt > 0.05) dt = 0.05;
+  frameCount++;
+  simTime += dt;
+
+  const k = 1 - Math.exp(-(speakTarget > speakF ? 6.5 : 3.0) * dt);
+  speakF += (speakTarget - speakF) * k;
+
+  hueDrift += dt * (0.012 + 0.045 * speakF) * hueSpan;
+  if (hueDrift >= 1) hueDrift -= 1;
+
+  breathPhase += dt * 0.22; if (breathPhase >= 1) breathPhase -= 1;
+  const breath = SIN_LUT[((breathPhase * SIN_N) | 0) & (SIN_N - 1)];
+  sphereGroup.scale.setScalar(userScale * (1 + 0.15 * speakF) * (1 + (0.005 + 0.016 * speakF) * breath));
+
+  swayPhase += dt * 0.13; if (swayPhase >= 1) swayPhase -= 1;
+  const sway = SIN_LUT[((swayPhase * SIN_N) | 0) & (SIN_N - 1)];
+  if (!(pDown && pMoved)) spinGroup.rotation.y += (0.055 + speakF * (0.055 + 0.035 * sway)) * rotMult * dt;
+  sphereGroup.rotation.y += 0.016 * dt;
+  sphereGroup.rotation.x += (tiltTarget - sphereGroup.rotation.x) * (1 - Math.exp(-6 * dt));
+
+  camera.position.z += (zoomTarget - camera.position.z) * (1 - Math.exp(-8 * dt));
+  camera.position.x += (mouseNX * 0.8 - camera.position.x) * (1 - Math.exp(-3 * dt));
+  camera.position.y += (-mouseNY * 0.5 - camera.position.y) * (1 - Math.exp(-3 * dt));
+  camera.lookAt(0, 0, 0);
+  scene.fog.near = camera.position.z - R * 0.95;
+  scene.fog.far  = camera.position.z + R * 1.35;
+
+  const speedFactor = speedMult * (1 + 0.45 * speakF);
+  let effTarget = (targetPulses * (1 + 0.8 * speakF)) | 0;
+  if (effTarget > MAX_PULSES) effTarget = MAX_PULSES;
+  updatePulses(dt, speedFactor, effTarget);
+  writeBeams();
+  updateBounces(dt);
+
+  /* ignition shockwave from the origin neuron */
+  if (waveActive) {
+    const wt = simTime - waveT0;
+    if (wt > waveDur) waveActive = false;
+    else {
+      for (let i = 0; i < N; i++) {
+        const d = waveDist[i];
+        if (d >= 0 && wt - d * WAVE_PER > 0) {
+          triggerBounce(i, AMP_WAVE, waveHue0 + d * 0.05 * hueSpan);
+          waveDist[i] = -2;
+        }
+      }
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+igniteWave();
+tick();
+
+})();
+</script>
+</body>
+</html>
