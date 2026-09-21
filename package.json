@@ -2,6 +2,8 @@
   "name": "paradox-ai-assistant",
   "private": true,
   "version": "1.0.0",
+  "description": "PARADOX Native Windows AI Assistant powered by Gemini Live",
+  "author": "PARADOX",
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
@@ -14,6 +16,7 @@
   "build": {
     "appId": "com.paradox.ai.assistant",
     "productName": "PARADOX AI Assistant",
+    "electronVersion": "31.0.0",
     "directories": {
       "output": "dist-app"
     },
@@ -37,7 +40,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
     "concurrently": "^10.0.5",
-    "electron": "^44.4.3",
+    "electron": "^31.0.0",
     "electron-builder": "^26.15.3",
     "oxfmt": "^0.2.0",
     "tailwindcss": "^4.0.0",
